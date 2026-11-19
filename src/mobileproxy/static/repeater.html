@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Repeater – MobileProxy</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="rp">
+<header class="rp-head">
+  <div class="brand">Repeater</div>
+  <select id="rp-method" title="HTTP method">
+    <option>GET</option><option>POST</option><option>PUT</option><option>PATCH</option><option>DELETE</option><option>HEAD</option><option>OPTIONS</option>
+  </select>
+  <input id="rp-url" class="mono" placeholder="http://server/path?query" spellcheck="false">
+  <button id="rp-send" class="primary" title="Send (Ctrl/⌘ + Enter)">Send</button>
+  <label class="switch" title="Send through MobileProxy: rules and mocks apply and the call is recorded in the history (REPLAY). Unticked = straight to the server."><input type="checkbox" id="rp-via" checked> through MobileProxy</label>
+  <button id="rp-reset" title="Back to the captured request">Reset</button>
+</header>
+<main class="rp-main">
+  <section class="rp-pane">
+    <div class="toolbar">
+      <b>Request</b>
+      <div class="seg" id="rp-req-tabs">
+        <button data-t="body" class="active">Body</button>
+        <button data-t="headers">Headers</button>
+      </div>
+      <span class="grow"></span>
+      <span class="rp-body-only"><button id="rp-format" class="small" title="Pretty-print JSON / XML">Format</button> <span id="rp-valid" class="valid"></span></span>
+      <span class="rp-headers-only muted small">one per line, <span class="mono">Name: value</span>; # comments out · Host / Content-Length are computed</span>
+    </div>
+    <textarea id="rp-body" spellcheck="false" placeholder="(no body)"></textarea>
+    <textarea id="rp-headers" spellcheck="false" hidden></textarea>
+    <div id="rp-origin" class="muted small rp-foot"></div>
+  </section>
+  <section class="rp-pane">
+    <div class="toolbar">
+      <b>Response</b>
+      <span id="rp-status"></span>
+      <span id="rp-meta" class="muted small"></span>
+      <span class="grow"></span>
+      <select id="rp-attempts" title="Previous sends in this window" hidden></select>
+    </div>
+    <div class="toolbar rp-subbar">
+      <div class="seg" id="rp-resp-tabs">
+        <button data-t="view" class="active">Readable</button>
+        <button data-t="raw">Raw</button>
+        <button data-t="headers">Headers</button>
+      </div>
+      <span id="rp-badges"></span>
+      <span class="grow"></span>
+      <span id="rp-link" class="small"></span>
+    </div>
+    <div id="rp-view" class="tree"><span class="muted">Press Send (Ctrl/⌘ + Enter).</span></div>
+    <pre id="rp-raw" class="code rp-raw" hidden></pre>
+    <div id="rp-resp-headers" class="rp-headers-view" hidden><table class="kv"></table></div>
+  </section>
+</main>
+<div id="toast"></div>
+<script src="/static/common.js"></script>
+<script src="/static/repeater.js"></script>
+</body>
+</html>

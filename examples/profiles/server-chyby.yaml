@@ -1,0 +1,22 @@
+name: server-chyby
+description: Ukázka – simulace výpadků a pomalého serveru (uprav server/path)
+rules:
+- name: keepAlive selže 3x
+  enabled: true
+  match: {server: "*", path: /StatusService, soap_op: keepAlive}
+  action: replace
+  mock: true
+  status: 500
+  headers: {Content-Type: text/xml; charset=utf-8}
+  body: '<?xml version="1.0" encoding="utf-8"?><soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Body><soap:Fault><faultcode>soap:Server</faultcode><faultstring>Simulated failure</faultstring></soap:Fault></soap:Body></soap:Envelope>'
+  remaining: 3
+- name: pomalé REST (3 s)
+  enabled: false
+  match: {server: "*", path: "/rest/*"}
+  action: delay
+  delay_ms: 3000
+- name: přerušené spojení
+  enabled: false
+  match: {server: "*", path: "/rest/*/list"}
+  action: drop
+  mock: true

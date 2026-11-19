@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MobileProxy</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header>
+  <div class="brand">MobileProxy</div>
+  <nav>
+    <button data-tab="traffic" class="active">Traffic</button>
+    <button data-tab="rules">Rules <span id="rules-count" class="pill"></span></button>
+    <button data-tab="profiles">Profiles</button>
+    <button data-tab="setup">Settings</button>
+  </nav>
+  <div class="hdr-right">
+    <div id="emu-state" class="emu" hidden></div>
+    <div id="ios-state" class="emu" hidden></div>
+    <label class="switch" title="Pause all rules globally (traffic is still recorded)"><input type="checkbox" id="rules-paused"> rules paused</label>
+    <span id="proxy-info" class="muted"></span>
+    <span id="ws-state" class="dot" title="live connection"></span>
+  </div>
+</header>
+
+<main>
+  <!-- ======================= TRAFFIC ======================= -->
+  <section id="tab-traffic" class="tab active">
+    <aside id="servers">
+      <div class="pane-title">Servers <button id="btn-clear-all" class="link" title="Clear history of all servers">clear</button></div>
+      <ul id="server-list"></ul>
+      <div class="hint" id="servers-empty">No traffic yet. Set the proxy in the emulator (button at the top or the Settings tab).</div>
+    </aside>
+    <section id="list-pane">
+      <div class="toolbar">
+        <div class="seg">
+          <button data-view="grouped" class="active" title="Endpoints grouped by METHOD /path; variants = distinct query / request body, each with its latest response">Grouped</button>
+          <button data-view="timeline" title="Every call in chronological order">Timeline</button>
+        </div>
+        <div class="seg" id="cat-filter" title="Categories are defined in Settings → Request categories">
+          <button data-cat="" class="active">All</button>
+          <button data-cat="data">Data</button>
+          <button data-cat="metadata">Metadata</button>
+          <button data-cat="other">Other</button>
+        </div>
+        <span class="grow"></span>
+        <label class="switch" title="Refresh the list automatically as new requests arrive"><input type="checkbox" id="autoscroll" checked> live</label>
+      </div>
+      <div class="toolbar searchbar">
+        <input id="filter" placeholder="search (path, query, request; tick 'bodies' for response content)" title="Case-insensitive. Searches endpoint, query and request summary; with 'bodies' also full request/response bodies.">
+        <label class="switch" title="Search in full request and response bodies (incl. original response before rules)"><input type="checkbox" id="s-bodies"> bodies</label>
+        <label class="switch" title="Search in request and response headers"><input type="checkbox" id="s-headers"> headers</label>
+        <label class="switch" title="Treat the search text as a regular expression"><input type="checkbox" id="s-regex"> regex</label>
+        <select id="s-status" title="Status filter">
+          <option value="">any status</option><option value="2xx">2xx</option><option value="3xx">3xx</option>
+          <option value="4xx">4xx</option><option value="5xx">5xx</option><option value="4xx,5xx,err">failing (4xx/5xx/err)</option>
+          <option value="err">connection error</option>
+        </select>
+        <select id="s-since" title="Time filter">
+          <option value="">any time</option><option value="1m">last 1 min</option><option value="5m">last 5 min</option>
+          <option value="15m">last 15 min</option><option value="1h">last hour</option>
+        </select>
+        <label class="switch" title="Only responses changed by a rule or mocked"><input type="checkbox" id="s-modified"> modified</label>
+        <button id="s-clear" class="small" title="Clear search and filters">✕</button>
+        <span id="s-info" class="muted small"></span>
+      </div>
+      <div id="server-head" class="server-head"></div>
+      <table class="grid" id="ex-table">
+        <thead><tr><th>#</th><th>Method</th><th>Endpoint</th><th>Status</th><th>Time</th><th>Size</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </section>
+    <section id="detail-pane">
+      <div id="detail-empty" class="hint">Select a request on the left.</div>
+      <div id="detail" hidden>
+        <div class="detail-head">
+          <div class="d-titlebar"><div id="d-title" class="mono"></div><button id="btn-repeater" class="small" title="Open this request in a new Repeater window: edit headers / body, send again, see the response">Open in Repeater ↗</button></div>
+          <div id="d-meta" class="muted"></div>
+          <div id="d-badges"></div>
+          <div id="d-history" class="muted small"></div>
+        </div>
+        <div class="seg sub">
+          <button data-dtab="resp" class="active">Response</button>
+          <button data-dtab="orig">Original response</button>
+          <button data-dtab="req">Request</button>
+          <button data-dtab="headers">Headers</button>
+        </div>
+        <div class="dtab" id="dtab-resp">
+          <div class="toolbar">
+            <div class="seg" id="resp-mode">
+              <button data-mode="view" class="active" title="Formatted tree – click a key/element to copy its JSONPath/XPath">Readable</button>
+              <button data-mode="edit" title="Edit the response before pinning it">Edit</button>
+            </div>
+            <span class="view-only"><button id="btn-expand" class="small" title="Expand all">⊞</button><button id="btn-collapse" class="small" title="Collapse all">⊟</button>
+              <span id="find-bar" hidden><button id="find-prev" class="small" title="Previous match">▲</button><button id="find-next" class="small" title="Next match">▼</button> <span id="find-info" class="small"></span></span></span>
+            <span class="edit-only"><button id="btn-format">Format</button> <button id="btn-revert" title="Discard edits – back to the captured response (formatted)">Revert</button> <span id="ed-valid" class="valid"></span></span>
+            <label title="HTTP status for the pinned rule">Status <input id="ed-status" type="number" class="w60"></label>
+            <span class="grow"></span>
+            <label class="switch" title="Rule applies only to the same query string"><input type="checkbox" id="pin-query">query</label>
+            <label class="switch" id="pin-body-wrap" title="Rule applies only to requests with the same body (compared normalized). Edit the rule afterwards to match only part of the body (body_json / body_xpath / body_contains)." hidden><input type="checkbox" id="pin-body">body</label>
+            <label title="How many times to apply the rule (empty = always)">× <input id="pin-times" type="number" min="1" class="w60" placeholder="∞"></label>
+            <button id="btn-pin" class="primary" title="Create a rule: this response is returned instead of the server response">Pin</button>
+            <button id="btn-mock" title="Like Pin, but the server is not contacted at all">Mock</button>
+          </div>
+          <div id="resp-view" class="tree"></div>
+          <textarea id="ed-body" spellcheck="false" hidden></textarea>
+          <div id="resp-note" class="muted"></div>
+        </div>
+        <div class="dtab" id="dtab-orig" hidden><div id="orig-body" class="tree"></div></div>
+        <div class="dtab" id="dtab-req" hidden><pre id="req-line" class="code small"></pre><div id="req-body" class="tree"></div></div>
+        <div class="dtab" id="dtab-headers" hidden>
+          <h4>Request</h4><table class="kv" id="req-headers"></table>
+          <h4>Response</h4><table class="kv" id="resp-headers"></table>
+        </div>
+      </div>
+    </section>
+  </section>
+
+  <!-- ======================= RULES ======================= -->
+  <section id="tab-rules" class="tab">
+    <div class="rules-left">
+      <div class="toolbar">
+        <select id="rule-template">
+          <option value="replace">New: replace response</option>
+          <option value="patch-json">New: patch JSON (JSONPath)</option>
+          <option value="patch-xml">New: patch XML/SOAP (XPath)</option>
+          <option value="patch-regex">New: patch regex</option>
+          <option value="post-json">New: mock by POST body (JSON)</option>
+          <option value="post-soap">New: mock by SOAP request content</option>
+          <option value="error">New: error 500</option>
+          <option value="delay">New: delay</option>
+          <option value="drop">New: drop connection</option>
+        </select>
+        <button id="btn-new-rule">Add</button>
+        <span class="grow"></span>
+        <button id="btn-clear-rules" class="danger">Delete all</button>
+      </div>
+      <table class="grid" id="rules-table">
+        <thead><tr><th></th><th>Name</th><th>Match</th><th>Action</th><th>Hits</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <div class="hint">Rules are evaluated top to bottom; replace/patch effects stack. Mock rules answer without contacting the server.</div>
+    </div>
+    <div class="rules-right">
+      <div class="pane-title">Rule editor <span id="rule-edit-id" class="muted"></span></div>
+      <div id="rule-body-sec" hidden>
+        <div class="toolbar sec-head">
+          <b>Response body</b><span id="rule-body-valid" class="valid"></span>
+          <span class="grow"></span>
+          <button id="btn-rule-format" class="small" title="Pretty-print JSON / XML">Format</button>
+        </div>
+        <textarea id="rule-body" spellcheck="false"></textarea>
+      </div>
+      <details id="rule-json-sec" open>
+        <summary>Rule settings <span class="muted">(match, status, headers, mock, delay…; the body is edited above)</span></summary>
+        <textarea id="rule-json" spellcheck="false" placeholder="Select a rule or add a new one"></textarea>
+      </details>
+      <div class="toolbar">
+        <button id="btn-save-rule" class="primary">Save</button>
+        <button id="btn-preview-rule" title="Try the patches on the latest captured response of a matching endpoint">Preview patch</button>
+        <span id="rule-msg" class="muted"></span>
+      </div>
+      <pre id="rule-preview" class="code" hidden></pre>
+      <details class="hint"><summary>Rule format</summary><pre class="small">{
+  "name": "…",
+  "enabled": true,
+  "match": {"server": "host:port | alias | *", "method": "GET", "path": "/api/*",
+            "query": null, "soap_op": null,
+            // request body conditions (all optional, combined with AND):
+            "body_contains": "substring", "body_regex": "regex",
+            "body_equals": "whole body (JSON key order / XML whitespace ignored)",
+            "body_json": {"$.filter.layer": "KABEL", "$.id": null},      // null = exists
+            "body_xpath": {"//*[local-name()='id']": "12"}},
+  "action": "replace | patch | delay | drop",
+  "status": 200, "headers": {"X-Test": "1", "ETag": ""},
+  "body": "…",                 // replace
+  "mock": false,               // replace/drop without contacting the server
+  "patches": [                 // patch
+    {"type": "jsonpath", "path": "$.items[0].name", "op": "set|delete|append", "value": "X"},
+    {"type": "xpath", "path": "//*[local-name()='code']", "op": "set|delete|set_attr|insert_xml", "value": "1", "attr": null},
+    {"type": "regex", "pattern": "\"visible\":true", "replacement": "\"visible\":false", "count": 0}
+  ],
+  "delay_ms": 0,
+  "remaining": null            // N = only N times
+}</pre></details>
+    </div>
+  </section>
+
+  <!-- ======================= PROFILES ======================= -->
+  <section id="tab-profiles" class="tab">
+    <div class="card">
+      <h3>Save current rules as a profile</h3>
+      <div class="toolbar">
+        <input id="prof-name" placeholder="name, e.g. missing-codelist">
+        <input id="prof-desc" placeholder="description" class="grow">
+        <button id="btn-save-profile" class="primary">Save</button>
+      </div>
+    </div>
+    <div class="card">
+      <h3>Profiles</h3>
+      <table class="grid" id="profiles-table"><thead><tr><th>Name</th><th>Description</th><th>Rules</th><th></th></tr></thead><tbody></tbody></table>
+      <div class="hint">Profiles are YAML files in <span id="prof-dir" class="mono"></span> – they can be versioned in git and shared.</div>
+    </div>
+  </section>
+
+  <!-- ======================= SETUP ======================= -->
+  <section id="tab-setup" class="tab">
+    <div class="card">
+      <h3>Connecting the emulator</h3>
+      <p>Proxy: <b class="mono" id="s-proxy"></b>. Inside the emulator the computer is reachable as <b class="mono" id="s-emu"></b>.</p>
+      <ol>
+        <li>Use <b>Set proxy</b> in the top bar or <b>Proxy on</b> next to a device below (= <span class="mono">adb shell settings put global http_proxy 10.0.2.2:PORT</span>), or manually in Wi-Fi settings / Extended controls &gt; Settings &gt; Proxy.</li>
+        <li>For HTTPS install the CA certificate on the device (<b>Push CA</b> or <a href="/api/ca.crt">download</a>). The app trusts user CAs (network_security_config).</li>
+        <li>Turn the proxy off when you are done – otherwise the emulator has no network while MobileProxy is not running.</li>
+      </ol>
+      <div class="toolbar"><button id="btn-adb-refresh">Load devices</button><span id="adb-path" class="muted"></span></div>
+      <table class="grid" id="adb-table"><thead><tr><th>Device</th><th>Proxy</th><th></th></tr></thead><tbody></tbody></table>
+      <pre id="adb-msg" class="code small" hidden></pre>
+    </div>
+    <div class="card" id="ios-card">
+      <h3>iOS Simulator &amp; macOS system proxy</h3>
+      <div id="ios-unsupported" class="muted" hidden>Available on macOS only (the iOS Simulator uses the Mac's network settings).</div>
+      <div id="ios-body">
+        <p class="muted">The iOS Simulator has no proxy setting of its own – it uses the Mac's. MobileProxy sets an automatic proxy
+          configuration (PAC) on all network services of the Mac. The PAC sends <b>only the hosts below</b> through MobileProxy;
+          the rest of the Mac stays direct. The original settings are restored when MobileProxy stops; if it crashes, the PAC URL
+          is unreachable and macOS falls back to direct connections (or run <span class="mono">./run.sh --restore-system-proxy</span>).</p>
+        <div class="toolbar">
+          <b>System proxy:</b> <span id="sp-state" class="muted">…</span>
+          <span class="grow"></span>
+          <button id="sp-enable" class="primary">Enable</button>
+          <button id="sp-apply" title="Re-apply so macOS reloads the PAC with the current host list">Apply changes</button>
+          <button id="sp-disable">Disable &amp; restore</button>
+        </div>
+        <h4>Hosts routed through MobileProxy <span class="muted">(one per line, globs: <span class="mono">172.30.*</span>, <span class="mono">*.berit.cz</span>)</span></h4>
+        <textarea id="sp-hosts" class="short" spellcheck="false"></textarea>
+        <div class="toolbar">
+          <label class="switch"><input type="checkbox" id="sp-include-seen"> also all servers MobileProxy already knows (e.g. from the Android emulator)</label>
+          <span class="grow"></span>
+          <button id="sp-save">Save hosts</button>
+        </div>
+        <div class="muted small">Effective PAC hosts: <span id="sp-effective-hosts" class="mono"></span> · <a href="/proxy.pac" target="_blank">proxy.pac</a></div>
+        <h4>Booted simulators</h4>
+        <div class="toolbar">
+          <label>App bundle id <input id="ios-bundle" class="w400"></label>
+          <span class="grow"></span>
+          <button id="ios-install-ca" title="xcrun simctl keychain &lt;sim&gt; add-root-cert – needed for HTTPS">Install CA to all</button>
+          <button id="ios-restart">Restart app</button>
+        </div>
+        <table class="grid" id="ios-table"><thead><tr><th>Simulator</th><th>Runtime</th><th>MobileProxy CA</th></tr></thead><tbody></tbody></table>
+        <pre id="ios-msg" class="code small" hidden></pre>
+      </div>
+    </div>
+    <div class="card">
+      <h3>Behaviour</h3>
+      <label class="switch"><input type="checkbox" id="set-strip-cache"> Strip conditional headers (If-None-Match / If-Modified-Since) so the server does not answer 304</label><br>
+      <label>Max. history entries per server <input type="number" id="set-max-ex" class="w80"></label><br>
+      <label>App package (for clear data / restart) <input id="set-package" class="w400"></label>
+      <h4>Ignored hosts <span class="muted">(regex on host:port – no TLS interception, not logged)</span></h4>
+      <textarea id="set-ignore" class="short" spellcheck="false"></textarea>
+      <div class="toolbar"><button id="btn-save-settings" class="primary">Save settings</button><span id="settings-msg" class="muted"></span></div>
+    </div>
+    <div class="card">
+      <h3>Request categories <span class="muted">(filter All / Data / Metadata / Other on the Traffic tab)</span></h3>
+      <p class="muted">Rules are evaluated top to bottom, the first match wins. <span class="mono">path</span> is a case-insensitive glob on the URL path
+        (leading <span class="mono">*</span> ignores the server context path); optional <span class="mono">method</span>, <span class="mono">soap_op</span>, <span class="mono">query_contains</span>.
+        Defaults are derived from the android-client sources.</p>
+      <textarea id="set-categories" class="tall" spellcheck="false"></textarea>
+      <div class="toolbar">
+        <label>Unmatched requests go to
+          <select id="set-default-cat"><option value="other">Other</option><option value="data">Data</option><option value="metadata">Metadata</option></select></label>
+        <button id="btn-save-categories" class="primary">Save categories</button>
+        <button id="btn-reset-categories">Reset to defaults</button>
+      </div>
+    </div>
+    <div class="card">
+      <h3>MCP</h3>
+      <p>Endpoint: <b class="mono" id="s-mcp"></b> (Streamable HTTP, localhost only).</p>
+      <p>Claude Code: <code class="mono" id="s-mcp-cmd"></code></p>
+      <p>JSON config (Claude Desktop / other clients):</p>
+      <pre class="code small" id="s-mcp-json"></pre>
+    </div>
+  </section>
+</main>
+<div id="toast"></div>
+<script src="/static/common.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>
