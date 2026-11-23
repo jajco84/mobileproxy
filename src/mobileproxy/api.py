@@ -401,7 +401,10 @@ def create_app(ctx: AppContext, mcp_server=None) -> FastAPI:
     async def adb_action(serial: str, action: str) -> dict:
         pkg = store.settings.app_package
         if action == "proxy-on":
-            msg = await adb.set_proxy(serial, ctx.proxy_port)
+            try:
+                msg = await adb.set_proxy(serial, ctx.proxy_port)
+            except adb.ReverseFailed as e:
+                raise HTTPException(409, str(e))
         elif action == "proxy-off":
             msg = await adb.clear_proxy(serial)
         elif action == "push-ca":

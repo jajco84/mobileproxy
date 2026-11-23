@@ -620,7 +620,9 @@ async function emuSetAll(enable) {
   try {
     const r = await api("POST", `/api/adb/all/proxy?enable=${enable}`);
     renderEmu(r);
-    toast(enable ? `Proxy set on ${r.results.length} emulator(s). Restart the app if needed.` : "Proxy turned off in emulators");
+    const failed = r.results.filter((x) => x.error);
+    if (failed.length) { toast(failed.map((x) => x.message).join(" | "), true); return; }
+    toast(enable ?`Proxy set on ${r.results.length} emulator(s). Restart the app if needed.` : "Proxy turned off in emulators");
   } catch (e) { toast(e.message, true); }
   finally { emuBusy = false; }
 }

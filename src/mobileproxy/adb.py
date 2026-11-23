@@ -88,9 +88,16 @@ async def set_proxy_all(proxy_port: int, enable: bool, emulators_only: bool = Tr
     for dev in d.get("devices", []):
         if dev["state"] != "device" or (emulators_only and not dev["emulator"]):
             continue
-        msg = await (set_proxy(dev["serial"], proxy_port) if enable else clear_proxy(dev["serial"]))
-        results.append({"serial": dev["serial"], "message": msg})
+        try:
+            msg = await (set_proxy(dev["serial"], proxy_port) if enable else clear_proxy(dev["serial"]))
+            results.append({"serial": dev["serial"], "message": msg})
+        except ReverseFailed as e:
+            results.append({"serial": dev["serial"], "message": str(e), "error": True})
     return results
+
+
+class ReverseFailed(Exception):
+    """adb reverse failed (typically the port is taken on the device); http_proxy was left unchanged."""
 
 
 async def set_proxy(serial: str, proxy_port: int) -> str:
@@ -100,6 +107,12 @@ async def set_proxy(serial: str, proxy_port: int) -> str:
         target = f"10.0.2.2:{proxy_port}"
     else:
         code, out = await _run("-s", serial, "reverse", f"tcp:{proxy_port}", f"tcp:{proxy_port}")
+        if code != 0:
+            # Setting http_proxy anyway would send the device's traffic to whatever listens on that port.
+            raise ReverseFailed(
+                f"adb reverse tcp:{proxy_port} failed on {serial}: {out or f'exit code {code}'}. "
+                f"Proxy was NOT set. Port {proxy_port} is probably taken on the device; "
+                f"restart MobileProxy with --proxy-port <other port>.")
         log.append(f"adb reverse: {out or 'ok'}")
         target = f"127.0.0.1:{proxy_port}"
     code, out = await _run("-s", serial, "shell", "settings", "put", "global", "http_proxy", target)
